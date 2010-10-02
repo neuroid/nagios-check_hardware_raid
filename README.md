@@ -31,7 +31,7 @@ Reporting
 The plugin checks all available array units. If all of them are healthy OK
 state is reported. If any of them is verifying or rebuilding WARNING state is
 reported. In all other cases the plugin reports a CRITICAL state. Additionally
-If the BBU check fails a CRITICAL state is reported regardless of the array
+if the BBU check fails CRITICAL state is reported regardless of the array
 state.
 
 Plugin output contains info about all array units and drives and optionally
