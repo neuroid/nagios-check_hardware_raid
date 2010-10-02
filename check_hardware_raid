@@ -1,0 +1,233 @@
+#!/usr/bin/env python
+
+import os
+import sys
+from optparse import OptionParser
+from subprocess import Popen, PIPE
+import re
+
+NAGIOS_STATE_OK = 0
+NAGIOS_STATE_WARNING = 1
+NAGIOS_STATE_CRITICAL = 2
+NAGIOS_STATE_UNKNOWN = 3
+
+UNIT_STATE_OK = ('ok', 'optimal')
+UNIT_STATE_VERIFYING = ('verifying',)
+UNIT_STATE_REBUILDING = ('rebuilding',)
+DRIVE_STATE_OK = ('ok', 'online', 'hot spare')
+BATTERY_STATE_OK = ('ok', 'optimal')
+
+def call(command):
+
+    process = Popen(command, stdout = PIPE, stderr = PIPE, shell = True)
+
+    (stdout, stderr) = process.communicate()
+
+    return (process.returncode, stdout, stderr)
+
+
+def get_controller_info(command):
+
+    (returncode, stdout, stderr) = call(command)
+
+    if returncode == 0:
+        return stdout
+
+    print >>sys.stderr, stderr
+
+    return None
+
+
+def parse_3ware_info(info, battery = False):
+
+    parser_states = {
+        'unit': None,
+        'vport': re.compile('^(V?)Port'),
+        'name': re.compile('^Name')
+    }
+    parser_state = 'unit'
+
+    unit_status_re = re.compile('u[0-9]+\s+[^\s]+\s+([^\s]+)')
+    drive_status_re = re.compile('p[0-9]+\s+([^\s]+)')
+    battery_status_re = re.compile('bbu\s+[^\s]+\s+[^\s]+\s+([^\s]+)')
+
+    status = {'units': [], 'drives': [], 'battery': None}
+
+    for line in info.split('\n'):
+        if parser_state == 'unit':
+            if parser_states['vport'].search(line):
+                parser_state = 'vport'
+                continue
+            match = unit_status_re.search(line)
+            if not match:
+                continue
+            status['units'].append(match.group(1).lower())
+        elif parser_state == 'vport':
+            if parser_states['name'].search(line):
+                if not battery:
+                    break
+                parser_state = 'name'
+                continue
+            match = drive_status_re.search(line)
+            if not match:
+                continue
+            status['drives'].append(match.group(1).lower())
+        elif parser_state == 'name':
+            match = battery_status_re.search(line)
+            if not match:
+                continue
+            status['battery'] = match.group(1).lower()
+
+    return status
+
+
+def parse_adaptec_info(info, battery = False):
+
+    parser_states = {
+        'controller_battery_information': None,
+        'logical_device_information': re.compile('Logical device information'),
+        'physical_device_information': re.compile('Physical Device information')
+    }
+    parser_state = 'controller_battery_information'
+
+    unit_status_re = re.compile('Status of logical device[^:]+:\s+(.+)')
+    drive_status_re = re.compile('State[^:]+:\s+(.+)')
+    battery_status_re = re.compile('Status[^:]+:\s+(.+)')
+
+    status = {'units': [], 'drives': [], 'battery': None}
+
+    for line in info.split('\n'):
+        if parser_state == 'controller_battery_information':
+            if not battery or parser_states['logical_device_information'].search(line):
+                parser_state = 'logical_device_information'
+                continue
+            match = battery_status_re.search(line)
+            if not match:
+                continue
+            status['battery'] = match.group(1).lower()
+        elif parser_state == 'logical_device_information':
+            if parser_states['physical_device_information'].search(line):
+                parser_state = 'physical_device_information'
+                continue
+            match = unit_status_re.search(line)
+            if not match:
+                continue
+            status['units'].append(match.group(1).lower())
+        elif parser_state == 'physical_device_information':
+            match = drive_status_re.search(line)
+            if not match:
+                continue
+            status['drives'].append(match.group(1).lower())
+
+    return status
+
+
+parser = OptionParser()
+parser.add_option("-c", "--controller", dest = "controller",
+                  metavar = "3ware|adaptec",
+                  help = "controller type")
+parser.add_option("-i", "--id", dest = "id",
+                  metavar = "cX|X",
+                  help = "controller id"),
+parser.add_option("-b", "--bbu",
+                  action = "store_true", dest = "battery", default = False,
+                  help = "check status of battery backup unit")
+
+(options, args) = parser.parse_args()
+
+controllers = {
+    '3ware': {
+        'command': 'tw_cli /%s show',
+        'script_name': 'check_3ware_raid',
+        'default_id': 'c0'
+    },
+    'adaptec': {
+        'command': 'arcconf getconfig %s',
+        'script_name': 'check_adaptec_raid',
+        'default_id': '1'
+    }
+}
+
+if not options.controller:    
+    script_name = os.path.basename(sys.argv[0])
+    for name, params in controllers.items():
+        if script_name == params['script_name']:
+            options.controller = name
+            break
+    options.controller or parser.error("controller type is required")
+
+if not controllers.has_key(options.controller):
+    parser.error("invalid controller type")
+
+if not options.id:
+    options.id = controllers[options.controller]['default_id']
+
+command = controllers[options.controller]['command'] % (options.id,)
+info = get_controller_info(command)
+
+if not info:
+    print "Unable to read `%s` output" % (command,)
+    sys.exit(NAGIOS_STATE_UNKNOWN)
+
+parse_info = globals()['parse_' + options.controller + '_info']
+status = parse_info(info, options.battery)
+
+if not status['units']:
+    print "Unable to get unit info from `%s` output" % (command,)
+    sys.exit(NAGIOS_STATE_UNKNOWN)
+
+if not status['drives']:
+    print "Unable to get drive info from `%s` output" % (command,)
+    sys.exit(NAGIOS_STATE_UNKNOWN)
+
+if options.battery and not status['battery']:
+    print "Unable to get battery info from `%s` output" % (command,)
+    sys.exit(NAGIOS_STATE_UNKNOWN)
+
+message = ''
+exit_code = NAGIOS_STATE_OK
+
+units = {}
+drives = {}
+
+for i in xrange(len(status['units'])):
+    state = status['units'][i]
+
+    if state in UNIT_STATE_OK:
+        pass
+    elif (state in UNIT_STATE_VERIFYING or state in UNIT_STATE_REBUILDING) \
+            and exit_code < NAGIOS_STATE_WARNING:
+        exit_code = NAGIOS_STATE_WARNING
+    else:
+        exit_code = NAGIOS_STATE_CRITICAL
+
+    if not state in units:
+        units[state] = []
+    units[state].append(str(i))
+
+for i in xrange(len(status['drives'])):
+    state = status['drives'][i]
+
+    if state not in DRIVE_STATE_OK and exit_code < NAGIOS_STATE_WARNING:
+        exit_code = NAGIOS_STATE_WARNING
+
+    if not state in drives:
+        drives[state] = []
+    drives[state].append(str(i))
+
+message += "unit(s): "
+for state in units:
+    message += "#%s %s " % (','.join(units[state]), state)
+message = message.rstrip() + ", drive(s): "
+
+for state in drives:
+    message += "#%s %s " % (','.join(drives[state]), state)
+message = message.rstrip()
+
+if options.battery:
+    if status['battery'] not in BATTERY_STATE_OK:
+        exit_code = NAGIOS_STATE_CRITICAL
+    message += ", battery: %s" % (status['battery'])
+
+print message
+sys.exit(exit_code)
