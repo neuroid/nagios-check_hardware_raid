@@ -98,8 +98,10 @@ def parse_adaptec_info(info, battery = False):
 
     parser_states = {
         'controller_battery_information': None,
-        'logical_device_information': re.compile('Logical device information'),
-        'physical_device_information': re.compile('Physical Device information')
+        'logical_device_information': \
+            re.compile('Logical device information'),
+        'physical_device_information': \
+            re.compile('Physical Device information')
     }
     parser_state = 'controller_battery_information'
 
@@ -111,7 +113,8 @@ def parse_adaptec_info(info, battery = False):
 
     for line in info.split('\n'):
         if parser_state == 'controller_battery_information':
-            if not battery or parser_states['logical_device_information'].search(line):
+            if not battery or \
+                    parser_states['logical_device_information'].search(line):
                 parser_state = 'logical_device_information'
                 continue
             match = battery_status_re.search(line)
@@ -138,8 +141,8 @@ def parse_adaptec_info(info, battery = False):
 if __name__ == "__main__":
     parser = OptionParser(usage = "%prog [options] 3ware|adaptec")
     parser.add_option("-i", "--id", dest = "id",
-                      metavar = "cX|X",
-                      help = "controller id (default: %s for 3ware, %s for adaptec)" \
+                      metavar = "cX|X", help = \
+                      "controller id (default: %s for 3ware, %s for adaptec)" \
                       % (CONTROLLERS['3ware']['default_id'], 
                          CONTROLLERS['adaptec']['default_id'])),
     parser.add_option("-b", "--bbu",
@@ -198,7 +201,8 @@ if __name__ == "__main__":
     
         if state in UNIT_STATE_OK:
             pass
-        elif (state in UNIT_STATE_VERIFYING or state in UNIT_STATE_REBUILDING) \
+        elif (state in UNIT_STATE_VERIFYING or \
+                state in UNIT_STATE_REBUILDING) \
                 and exit_code < NAGIOS_STATE_WARNING:
             exit_code = NAGIOS_STATE_WARNING
         else:
