@@ -140,14 +140,15 @@ def parse_adaptec_info(info, battery = False):
 
 if __name__ == "__main__":
     parser = OptionParser(usage = "%prog [options] 3ware|adaptec")
-    parser.add_option("-i", "--id", dest = "id",
-                      metavar = "cX|X", help = \
-                      "controller id (default: %s for 3ware, %s for adaptec)" \
-                      % (CONTROLLERS['3ware']['default_id'], 
-                         CONTROLLERS['adaptec']['default_id'])),
     parser.add_option("-b", "--bbu",
                       action = "store_true", dest = "battery", default = False,
                       help = "check status of battery backup unit")
+    parser.add_option("-i", "--id", 
+                      dest = "id", metavar = "cX|X",
+                      help = "controller id " + \
+                             "(default: %s for 3ware, %s for adaptec)" % \
+                             (CONTROLLERS['3ware']['default_id'], 
+                              CONTROLLERS['adaptec']['default_id'])),
     
     (options, args) = parser.parse_args()
         
