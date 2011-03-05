@@ -204,7 +204,7 @@ if __name__ == "__main__":
             pass
         elif (state in UNIT_STATE_VERIFYING or \
                 state in UNIT_STATE_REBUILDING) \
-                and exit_code < NAGIOS_STATE_WARNING:
+                and exit_code <= NAGIOS_STATE_WARNING:
             exit_code = NAGIOS_STATE_WARNING
         else:
             exit_code = NAGIOS_STATE_CRITICAL
