@@ -28,8 +28,8 @@ check_3ware_raid or check_adaptec_raid (e.g. if renamed or symlinked).
 Reporting
 ---------
 
-The plugin checks all available array units. If all of them are healthy OK
-state is reported. If any of them is verifying or rebuilding WARNING state is
+The plugin checks all available array units. If all of them are healthy or
+verifying OK state is reported. If any of them is rebuilding WARNING state is
 reported. In all other cases the plugin reports a CRITICAL state. Additionally
 if the BBU check fails CRITICAL state is reported regardless of the array
 state.
