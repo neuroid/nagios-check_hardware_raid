@@ -21,7 +21,7 @@ command outputs depending on the chosen controller type. The CLI tools should
 be in the current PATH. The default controller id can be altered with -i. 
 Status of battery backup unit is checked if the plugin is called with -b.
 
-Controller type gets chosen automatically if the plugin is runned as
+Controller type gets chosen automatically if the plugin is ran as
 check_3ware_raid or check_adaptec_raid (e.g. if renamed or symlinked).
 
 
