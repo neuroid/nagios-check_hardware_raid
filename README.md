@@ -13,8 +13,9 @@ Usage
 
 	Options:
 	  -h, --help          show this help message and exit
-	  -i cX|X, --id=cX|X  controller id (default: c0 for 3ware, 1 for adaptec)
 	  -b, --bbu           check status of battery backup unit
+	  -i cX|X, --id=cX|X  controller id (default: c0 for 3ware, 1 for adaptec)
+	Usage: check_hardware_raid [options] 3ware|adaptec
 
 Status of arrays is gathered from `tw_cli /c0 show` or `arcconf getconfig 1`
 command outputs depending on the chosen controller type. The CLI tools should
@@ -29,10 +30,10 @@ Reporting
 ---------
 
 The plugin checks all available array units. If all of them are healthy or
-verifying OK state is reported. If any of them is rebuilding WARNING state is
-reported. In all other cases the plugin reports a CRITICAL state. Additionally
-if the BBU check fails CRITICAL state is reported regardless of the array
-state.
+verifying, OK state is reported. If any of them is rebuilding, WARNING state
+is reported. In all other cases the plugin reports a CRITICAL state.
+Additionally, if the BBU check fails CRITICAL state is reported regardless of
+the array state.
 
 Plugin output contains info about all array units and drives and optionally
 about batter backup units.
