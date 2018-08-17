@@ -2,11 +2,12 @@
 
 """Nagios plugin for monitoring 3ware and Adaptec RAID arrays"""
 
+from __future__ import print_function
+from optparse import OptionParser
 import os
 import re
-import sys
-from optparse import OptionParser
 from subprocess import Popen, PIPE
+import sys
 
 NAGIOS_STATE_OK = 0
 NAGIOS_STATE_WARNING = 1
@@ -21,12 +22,12 @@ BATTERY_STATE_OK = ('ok', 'optimal')
 
 CONTROLLERS = {
     '3ware': {
-        'command': 'tw_cli /%s show',
+        'command': 'tw_cli /{id} show',
         'script_name': 'check_3ware_raid',
         'default_id': 'c0'
     },
     'adaptec': {
-        'command': 'arcconf getconfig %s',
+        'command': 'arcconf getconfig {id}',
         'script_name': 'check_adaptec_raid',
         'default_id': '1'
     }
@@ -37,7 +38,7 @@ def call(command):
     """Executes command in a shell"""
     process = Popen(command, stdout=PIPE, stderr=PIPE, shell=True)
     (stdout, stderr) = process.communicate()
-    return (process.returncode, stdout, stderr)
+    return (process.returncode, stdout.decode('utf8'), stderr.decode('utf8'))
 
 
 def get_controller_info(command):
@@ -50,7 +51,7 @@ def get_controller_info(command):
     if returncode == 0:
         return stdout
 
-    print >> sys.stderr, stderr
+    print(stderr, file=sys.stderr)
     return None
 
 
@@ -62,14 +63,14 @@ def parse_3ware_info(info, battery=False):
     """
     parser_states = {
         'unit': None,
-        'port': re.compile('^(V?)Port'),
-        'name': re.compile('^Name')
+        'port': re.compile(r'^(V?)Port'),
+        'name': re.compile(r'^Name')
     }
     parser_state = 'unit'
 
-    unit_status_re = re.compile('u[0-9]+\s+[^\s]+\s+([^\s]+)')
-    drive_status_re = re.compile('p[0-9]+\s+([^\s]+)')
-    battery_status_re = re.compile('bbu\s+[^\s]+\s+[^\s]+\s+([^\s]+)')
+    unit_status_re = re.compile(r'u[0-9]+\s+[^\s]+\s+([^\s]+)')
+    drive_status_re = re.compile(r'p[0-9]+\s+([^\s]+)')
+    battery_status_re = re.compile(r'bbu\s+[^\s]+\s+[^\s]+\s+([^\s]+)')
 
     status = {'units': [], 'drives': [], 'battery': None}
 
@@ -110,15 +111,15 @@ def parse_adaptec_info(info, battery=False):
     parser_states = {
         'controller_battery_information': None,
         'logical_device_information':
-            re.compile('Logical device information'),
+            re.compile(r'Logical device information'),
         'physical_device_information':
-            re.compile('Physical Device information')
+            re.compile(r'Physical Device information')
     }
     parser_state = 'controller_battery_information'
 
-    unit_status_re = re.compile('Status of logical device[^:]+:\s+(.+)')
-    drive_status_re = re.compile('State[^:]+:\s+(.+)')
-    battery_status_re = re.compile('Status[^:]+:\s+(.+)')
+    unit_status_re = re.compile(r'\s*Status of logical device\s*:\s+(.+)')
+    drive_status_re = re.compile(r'\s*State\s*:\s+(.+)')
+    battery_status_re = re.compile(r'\s*Status\s*:\s+(.+)')
 
     status = {'units': [], 'drives': [], 'battery': None}
 
@@ -128,7 +129,7 @@ def parse_adaptec_info(info, battery=False):
                     parser_states['logical_device_information'].search(line)):
                 parser_state = 'logical_device_information'
                 continue
-            match = battery_status_re.search(line)
+            match = battery_status_re.match(line)
             if not match:
                 continue
             status['battery'] = match.group(1).lower()
@@ -136,12 +137,12 @@ def parse_adaptec_info(info, battery=False):
             if parser_states['physical_device_information'].search(line):
                 parser_state = 'physical_device_information'
                 continue
-            match = unit_status_re.search(line)
+            match = unit_status_re.match(line)
             if not match:
                 continue
             status['units'].append(match.group(1).lower())
         elif parser_state == 'physical_device_information':
-            match = drive_status_re.search(line)
+            match = drive_status_re.match(line)
             if not match:
                 continue
             status['drives'].append(match.group(1).lower())
@@ -157,9 +158,9 @@ if __name__ == "__main__":
     parser.add_option("-i", "--id",
                       dest="id", metavar="cX|X",
                       help=("controller id " +
-                            "(default: %s for 3ware, %s for adaptec)" %
-                                (CONTROLLERS['3ware']['default_id'],
-                                 CONTROLLERS['adaptec']['default_id'])))
+                            "(default: {} for 3ware, {} for adaptec)".format(
+                                CONTROLLERS['3ware']['default_id'],
+                                CONTROLLERS['adaptec']['default_id'])))
 
     (options, args) = parser.parse_args()
 
@@ -181,26 +182,26 @@ if __name__ == "__main__":
     if not options.id:
         options.id = CONTROLLERS[controller_type]['default_id']
 
-    command = CONTROLLERS[controller_type]['command'] % (options.id,)
+    command = CONTROLLERS[controller_type]['command'].format(id=options.id)
     info = get_controller_info(command)
 
     if not info:
-        print "Unable to read `%s` output" % (command,)
+        print("Unable to read `{}` output".format(command))
         sys.exit(NAGIOS_STATE_UNKNOWN)
 
     parse_func = globals()['parse_' + controller_type + '_info']
     status = parse_func(info, options.battery)
 
     if not status['units']:
-        print "Unable to get unit info from `%s` output" % (command,)
+        print("Unable to get unit info from `{}` output".format(command))
         sys.exit(NAGIOS_STATE_UNKNOWN)
 
     if not status['drives']:
-        print "Unable to get drive info from `%s` output" % (command,)
+        print("Unable to get drive info from `{}` output".format(command))
         sys.exit(NAGIOS_STATE_UNKNOWN)
 
     if options.battery and not status['battery']:
-        print "Unable to get battery info from `%s` output" % (command,)
+        print("Unable to get battery info from `{}` output".format(command))
         sys.exit(NAGIOS_STATE_UNKNOWN)
 
     message = ''
@@ -209,7 +210,7 @@ if __name__ == "__main__":
     units = {}
     drives = {}
 
-    for i in xrange(len(status['units'])):
+    for i in range(len(status['units'])):
         state = status['units'][i]
 
         if state in UNIT_STATE_OK or state in UNIT_STATE_VERIFYING:
@@ -220,33 +221,33 @@ if __name__ == "__main__":
         else:
             exit_code = NAGIOS_STATE_CRITICAL
 
-        if not state in units:
+        if state not in units:
             units[state] = []
         units[state].append(str(i))
 
-    for i in xrange(len(status['drives'])):
+    for i in range(len(status['drives'])):
         state = status['drives'][i]
 
         if state not in DRIVE_STATE_OK and exit_code < NAGIOS_STATE_WARNING:
             exit_code = NAGIOS_STATE_WARNING
 
-        if not state in drives:
+        if state not in drives:
             drives[state] = []
         drives[state].append(str(i))
 
     message += "unit(s): "
     for state in units:
-        message += "#%s %s " % (','.join(units[state]), state)
+        message += "#{} {} ".format(','.join(units[state]), state)
     message = message.rstrip() + ", drive(s): "
 
     for state in drives:
-        message += "#%s %s " % (','.join(drives[state]), state)
+        message += "#{} {} ".format(','.join(drives[state]), state)
     message = message.rstrip()
 
     if options.battery:
         if status['battery'] not in BATTERY_STATE_OK:
             exit_code = NAGIOS_STATE_CRITICAL
-        message += ", battery: %s" % (status['battery'])
+        message += ", battery: {}".format(status['battery'])
 
-    print message
+    print(message)
     sys.exit(exit_code)
